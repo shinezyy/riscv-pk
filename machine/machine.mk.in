@@ -12,6 +12,7 @@ machine_hdrs = \
   mcall.h \
   mtrap.h \
   sbi.h \
+  uart.h \
   unprivileged_memory.h \
   vm.h \
 
@@ -24,6 +25,7 @@ machine_c_srcs = \
   fp_ldst.c \
   misaligned_ldst.c \
   sbi_impl.c \
+  uart.c \
   configstring.c \
 
 machine_asm_srcs = \
