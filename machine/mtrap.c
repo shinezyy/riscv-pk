@@ -1,6 +1,7 @@
 #include "mtrap.h"
 #include "mcall.h"
 #include "htif.h"
+#include "uart.h"
 #include "atomic.h"
 #include "bits.h"
 #include <errno.h>
@@ -22,39 +23,15 @@ static uintptr_t mcall_hart_id()
 
 static void request_htif_keyboard_interrupt()
 {
-  assert(tohost == 0);
-  tohost = TOHOST_CMD(1, 0, 0);
+  uart_enable_read_irq();
 }
 
 static void htif_interrupt()
 {
   // we should only be interrupted by keypresses
-  uint64_t fh = fromhost;
-  if (!fh)
-    return;
-  if (!(FROMHOST_DEV(fh) == 1 && FROMHOST_CMD(fh) == 0))
-    die("unexpected htif interrupt");
-  HLS()->console_ibuf = 1 + (uint8_t)FROMHOST_DATA(fh);
-  fromhost = 0;
+  if(uart_check_read_irq())
+	  HLS()->console_ibuf = 1 + uart_recv();
   set_csr(mip, MIP_SSIP);
-}
-
-static void do_tohost_fromhost(uintptr_t dev, uintptr_t cmd, uintptr_t data)
-{
-  while (tohost)
-    htif_interrupt();
-  tohost = TOHOST_CMD(dev, cmd, data);
-
-  while (1) {
-    uint64_t fh = fromhost;
-    if (fh) {
-      if (FROMHOST_DEV(fh) == dev && FROMHOST_CMD(fh) == cmd) {
-        fromhost = 0;
-        break;
-      }
-      htif_interrupt();
-    }
-  }
 }
 
 uintptr_t timer_interrupt()
@@ -71,13 +48,13 @@ uintptr_t timer_interrupt()
 
 static uintptr_t mcall_console_putchar(uint8_t ch)
 {
-  do_tohost_fromhost(1, 1, ch);
+  uart_send(ch);
   return 0;
 }
 
 static uintptr_t mcall_htif_syscall(uintptr_t magic_mem)
 {
-  do_tohost_fromhost(0, 0, magic_mem);
+  //do_tohost_fromhost(0, 0, magic_mem); // front-end server syscall
   return 0;
 }
 
