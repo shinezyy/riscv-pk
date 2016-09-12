@@ -29,9 +29,10 @@ static void request_htif_keyboard_interrupt()
 static void htif_interrupt()
 {
   // we should only be interrupted by keypresses
-  if(uart_check_read_irq())
+  if(uart_check_read_irq()) {
 	  HLS()->console_ibuf = 1 + uart_recv();
-  set_csr(mip, MIP_SSIP);
+	  set_csr(mip, MIP_SSIP);
+  }
 }
 
 uintptr_t timer_interrupt()
