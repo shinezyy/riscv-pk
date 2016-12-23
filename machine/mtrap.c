@@ -10,6 +10,7 @@
 
 volatile uint64_t tohost __attribute__((aligned(64))) __attribute__((section("htif")));
 volatile uint64_t fromhost __attribute__((aligned(64))) __attribute__((section("htif")));
+static spinlock_t htif_lock = SPINLOCK_INIT;
 
 void __attribute__((noreturn)) bad_trap()
 {
@@ -26,12 +27,20 @@ static void request_htif_keyboard_interrupt()
   uart_enable_read_irq();
 }
 
-static void htif_interrupt()
+static void __htif_interrupt()
 {
   // we should only be interrupted by keypresses
   if(uart_check_read_irq()) {
 	  HLS()->console_ibuf = 1 + uart_recv();
 	  set_csr(mip, MIP_SSIP);
+  }
+}
+
+static void htif_interrupt()
+{
+  if (spinlock_trylock(&htif_lock) == 0) {
+    __htif_interrupt();
+    spinlock_unlock(&htif_lock);
   }
 }
 
@@ -217,7 +226,7 @@ void mcall_trap(uintptr_t* regs, uintptr_t mcause, uintptr_t mepc)
       retval = mcall_shutdown();
       break;
     case MCALL_SET_TIMER:
-#ifdef __riscv32
+#if __riscv_xlen == 32
       retval = mcall_set_timer(arg0 + ((uint64_t)arg1 << 32));
 #else
       retval = mcall_set_timer(arg0);
