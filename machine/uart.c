@@ -12,6 +12,8 @@
 #define UART_CTRL_REG 0xc
 
 void uart_init() {
+	// reset the receive FIFO and transmit FIFO
+	*(uart_base_ptr + UART_CTRL_REG) = 0x3;
 }
 
 void uart_send(uint8_t data) {
