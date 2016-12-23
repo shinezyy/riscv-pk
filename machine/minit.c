@@ -2,6 +2,7 @@
 #include "atomic.h"
 #include "vm.h"
 #include "fp_emulation.h"
+#include "uart.h"
 #include <string.h>
 #include <limits.h>
 
@@ -131,6 +132,7 @@ static void hart_plic_init()
 
 void init_first_hart()
 {
+  uart_init();
   hart_init();
   hls_init(0); // this might get called again from parse_config_string
   parse_config_string();
