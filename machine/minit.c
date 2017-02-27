@@ -133,8 +133,10 @@ static void hart_plic_init()
 void init_first_hart()
 {
   uart_init();
+  uint32_t hartid = read_const_csr(mhartid);
+  printm("line %d: hartid = %d\n", __LINE__, hartid);
   hart_init();
-  hls_init(0); // this might get called again from parse_config_string
+  hls_init(hartid); // this might get called again from parse_config_string
   parse_config_string();
   plic_init();
   hart_plic_init();

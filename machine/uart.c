@@ -1,8 +1,9 @@
 // See LICENSE for license details.
 
 #include "uart.h"
+#include "mtrap.h"
 
-#define UART_BASE 0x60000000
+#define UART_BASE (0x60000000 + read_const_csr(mhartid) * 0x10000)
 
 #define uart_base_ptr (volatile char *)(UART_BASE)
 

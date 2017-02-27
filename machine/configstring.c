@@ -6,12 +6,12 @@
 
 static void query_mem(const char* config_string)
 {
-  query_result res = query_config_string(config_string, "ram{0{addr");
-  assert(res.start);
-  uintptr_t base = get_uint(res);
+//  query_result res = query_config_string(config_string, "ram{0{addr");
+//  assert(res.start);
+  uintptr_t base = 0x80000000; //get_uint(res);
   assert(base == DRAM_BASE);
-  res = query_config_string(config_string, "ram{0{size");
-  mem_size = get_uint(res);
+//  res = query_config_string(config_string, "ram{0{size");
+  mem_size = 0x4000000; //get_uint(res);
 }
 
 static void query_rtc(const char* config_string)
@@ -60,6 +60,7 @@ static void query_hart_plic(const char* config_string, hls_t* hls, int core, int
 
 static void query_harts(const char* config_string)
 {
+	uint32_t hartid = read_const_csr(mhartid);
   for (int core = 0, hart; ; core++) {
     for (hart = 0; ; hart++) {
       char buf[32];
@@ -67,6 +68,8 @@ static void query_harts(const char* config_string)
       query_result res = query_config_string(config_string, buf);
       if (!res.start)
         break;
+
+	  if(core == hartid) {
       hls_t* hls = hls_init(num_harts);
       hls->ipi = (void*)(uintptr_t)get_uint(res);
 
@@ -80,8 +83,9 @@ static void query_harts(const char* config_string)
       mb();
 
       // wake up the hart
-      *hls->ipi = 1;
+      //*hls->ipi = 1;
 
+	  }
       num_harts++;
     }
     if (!hart)

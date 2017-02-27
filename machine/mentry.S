@@ -230,7 +230,8 @@ do_reset:
   slli a1, a0, RISCV_PGSHIFT
   add sp, sp, a1
 
-  beqz a0, init_first_hart
+#  beqz a0, init_first_hart
+  tail init_first_hart
 
   # set MSIE bit to receive IPI
   li a1, MIP_MSIP
