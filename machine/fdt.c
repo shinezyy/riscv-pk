@@ -10,8 +10,8 @@ static inline uint32_t bswap(uint32_t x)
   return z;
 }
 
-static const uint32_t *fdt_scan_helper(
-  const uint32_t *lex,
+static uint32_t *fdt_scan_helper(
+  uint32_t *lex,
   const char *strings,
   struct fdt_scan_node *node,
   const struct fdt_cb *cb)
@@ -43,14 +43,17 @@ static const uint32_t *fdt_scan_helper(
         break;
       }
       case FDT_BEGIN_NODE: {
+        uint32_t *lex_next;
         if (!last && node && cb->done) cb->done(node, cb->extra);
         last = 1;
         child.name = (const char *)(lex+1);
         if (cb->open) cb->open(&child, cb->extra);
-        lex = fdt_scan_helper(
+        lex_next = fdt_scan_helper(
           lex + 2 + strlen(child.name)/4,
           strings, &child, cb);
-        if (cb->close) cb->close(&child, cb->extra);
+        if (cb->close && cb->close(&child, cb->extra) == -1)
+          while (lex != lex_next) *lex++ = bswap(FDT_NOP);
+        lex = lex_next;
         break;
       }
       case FDT_END_NODE: {
@@ -74,7 +77,7 @@ void fdt_scan(uintptr_t fdt, const struct fdt_cb *cb)
       bswap(header->last_comp_version) > FDT_VERSION) return;
 
   const char *strings = (const char *)(fdt + bswap(header->off_dt_strings));
-  const uint32_t *lex = (const uint32_t *)(fdt + bswap(header->off_dt_struct));
+  uint32_t *lex = (uint32_t *)(fdt + bswap(header->off_dt_struct));
 
   fdt_scan_helper(lex, strings, 0, cb);
 }
@@ -101,6 +104,19 @@ const uint32_t *fdt_get_size(const struct fdt_scan_node *node, const uint32_t *v
   *result = 0;
   for (int cells = node->size_cells; cells > 0; --cells) *result += bswap(*value++);
   return value;
+}
+
+int fdt_string_list_index(const struct fdt_scan_prop *prop, const char *str)
+{
+  const char *list = (const char *)prop->value;
+  const char *end = list + prop->len;
+  int index = 0;
+  while (end - list > 0) {
+    if (!strcmp(list, str)) return index;
+    ++index;
+    list += strlen(list) + 1;
+  }
+  return -1;
 }
 
 //////////////////////////////////////////// MEMORY SCAN /////////////////////////////////////////
@@ -166,6 +182,7 @@ void query_mem(uintptr_t fdt)
 ///////////////////////////////////////////// HART SCAN //////////////////////////////////////////
 
 static uint32_t hart_phandles[MAX_HARTS];
+uint64_t hart_mask;
 
 struct hart_scan {
   const struct fdt_scan_node *cpu;
@@ -221,16 +238,18 @@ static void hart_done(const struct fdt_scan_node *node, void *extra)
 
     if (scan->hart < MAX_HARTS) {
       hart_phandles[scan->hart] = scan->phandle;
-      if (scan->hart >= num_harts) num_harts = scan->hart + 1;
+      hart_mask |= 1 << scan->hart;
+      hls_init(scan->hart);
     }
   }
 }
 
-static void hart_close(const struct fdt_scan_node *node, void *extra)
+static int hart_close(const struct fdt_scan_node *node, void *extra)
 {
   struct hart_scan *scan = (struct hart_scan *)extra;
   if (scan->cpu == node) scan->cpu = 0;
   if (scan->controller == node) scan->controller = 0;
+  return 0;
 }
 
 void query_harts(uintptr_t fdt)
@@ -246,9 +265,10 @@ void query_harts(uintptr_t fdt)
   cb.close= hart_close;
   cb.extra = &scan;
 
-  num_harts = 0;
   fdt_scan(fdt, &cb);
-  assert (num_harts > 0);
+
+  // The current hart should have been detected
+  assert ((hart_mask >> read_csr(mhartid)) != 0);
 }
 
 ///////////////////////////////////////////// CLINT SCAN /////////////////////////////////////////
@@ -273,7 +293,7 @@ static void clint_open(const struct fdt_scan_node *node, void *extra)
 static void clint_prop(const struct fdt_scan_prop *prop, void *extra)
 {
   struct clint_scan *scan = (struct clint_scan *)extra;
-  if (!strcmp(prop->name, "compatible") && !strcmp((const char*)prop->value, "riscv,clint0")) {
+  if (!strcmp(prop->name, "compatible") && fdt_string_list_index(prop, "riscv,clint0") >= 0) {
     scan->compat = 1;
   } else if (!strcmp(prop->name, "reg")) {
     fdt_get_address(prop->node->parent, prop->value, &scan->reg);
@@ -304,10 +324,9 @@ static void clint_done(const struct fdt_scan_node *node, void *extra)
       if (hart_phandles[hart] == phandle)
         break;
     if (hart < MAX_HARTS) {
-      hls_t *hls = hls_init(hart);
+      hls_t *hls = OTHER_HLS(hart);
       hls->ipi = (void*)(scan->reg + index * 4);
       hls->timecmp = (void*)(scan->reg + 0x4000 + (index * 8));
-      *hls->ipi = 1; // wakeup the hart
     }
     value += 4;
   }
@@ -335,7 +354,7 @@ struct plic_scan
 {
   int compat;
   uintptr_t reg;
-  const uint32_t *int_value;
+  uint32_t *int_value;
   int int_len;
   int done;
   int ndev;
@@ -352,7 +371,7 @@ static void plic_open(const struct fdt_scan_node *node, void *extra)
 static void plic_prop(const struct fdt_scan_prop *prop, void *extra)
 {
   struct plic_scan *scan = (struct plic_scan *)extra;
-  if (!strcmp(prop->name, "compatible") && !strcmp((const char*)prop->value, "riscv,plic0")) {
+  if (!strcmp(prop->name, "compatible") && fdt_string_list_index(prop, "riscv,plic0") >= 0) {
     scan->compat = 1;
   } else if (!strcmp(prop->name, "reg")) {
     fdt_get_address(prop->node->parent, prop->value, &scan->reg);
@@ -407,10 +426,10 @@ static void plic_done(const struct fdt_scan_node *node, void *extra)
     value += 2;
   }
 #if 0
-  printm("PLIC: prio %x devs %d\n", (uint32_t)(uintptr_t)plic_priorities, plic_ndevs);
+  printm("PLIC: prio %x devs %d\r\n", (uint32_t)(uintptr_t)plic_priorities, plic_ndevs);
   for (int i = 0; i < MAX_HARTS; ++i) {
     hls_t *hls = OTHER_HLS(i);
-    printm("CPU %d: %x %x %x %x\n", i, (uint32_t)(uintptr_t)hls->plic_m_ie, (uint32_t)(uintptr_t)hls->plic_m_thresh, (uint32_t)(uintptr_t)hls->plic_s_ie, (uint32_t)(uintptr_t)hls->plic_s_thresh);
+    printm("CPU %d: %x %x %x %x\r\n", i, (uint32_t)(uintptr_t)hls->plic_m_ie, (uint32_t)(uintptr_t)hls->plic_m_thresh, (uint32_t)(uintptr_t)hls->plic_s_ie, (uint32_t)(uintptr_t)hls->plic_s_thresh);
   }
 #endif
 }
@@ -427,5 +446,147 @@ void query_plic(uintptr_t fdt)
   cb.extra = &scan;
 
   scan.done = 0;
+  fdt_scan(fdt, &cb);
+}
+
+static void plic_redact(const struct fdt_scan_node *node, void *extra)
+{
+  struct plic_scan *scan = (struct plic_scan *)extra;
+  uint32_t *value = scan->int_value;
+  uint32_t *end = value + scan->int_len/4;
+
+  if (!scan->compat) return;
+  scan->done = 1;
+
+  while (end - value > 0) {
+    if (bswap(value[1]) == IRQ_M_EXT) value[1] = bswap(-1);
+    value += 2;
+  }
+}
+
+void filter_plic(uintptr_t fdt)
+{
+  struct fdt_cb cb;
+  struct plic_scan scan;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = plic_open;
+  cb.prop = plic_prop;
+  cb.done = plic_redact;
+  cb.extra = &scan;
+
+  scan.done = 0;
+  fdt_scan(fdt, &cb);
+}
+
+//////////////////////////////////////////// COMPAT SCAN ////////////////////////////////////////
+
+struct compat_scan
+{
+  const char *compat;
+  int depth;
+  int kill;
+};
+
+static void compat_open(const struct fdt_scan_node *node, void *extra)
+{
+  struct compat_scan *scan = (struct compat_scan *)extra;
+  ++scan->depth;
+}
+
+static void compat_prop(const struct fdt_scan_prop *prop, void *extra)
+{
+  struct compat_scan *scan = (struct compat_scan *)extra;
+  if (!strcmp(prop->name, "compatible") && fdt_string_list_index(prop, scan->compat) >= 0)
+    if (scan->depth < scan->kill)
+      scan->kill = scan->depth;
+}
+
+static int compat_close(const struct fdt_scan_node *node, void *extra)
+{
+  struct compat_scan *scan = (struct compat_scan *)extra;
+  if (scan->kill == scan->depth--) {
+    scan->kill = 999;
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
+void filter_compat(uintptr_t fdt, const char *compat)
+{
+  struct fdt_cb cb;
+  struct compat_scan scan;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = compat_open;
+  cb.prop = compat_prop;
+  cb.close = compat_close;
+  cb.extra = &scan;
+
+  scan.compat = compat;
+  scan.depth = 0;
+  scan.kill = 999;
+  fdt_scan(fdt, &cb);
+}
+
+//////////////////////////////////////////// HART FILTER ////////////////////////////////////////
+
+struct hart_filter {
+  int compat;
+  int hart;
+  char *status;
+  unsigned long mask;
+};
+
+static void hart_filter_open(const struct fdt_scan_node *node, void *extra)
+{
+  struct hart_filter *filter = (struct hart_filter *)extra;
+  filter->status = 0;
+  filter->compat = 0;
+  filter->hart = -1;
+}
+
+static void hart_filter_prop(const struct fdt_scan_prop *prop, void *extra)
+{
+  struct hart_filter *filter = (struct hart_filter *)extra;
+  if (!strcmp(prop->name, "device_type") && !strcmp((const char*)prop->value, "cpu")) {
+    filter->compat = 1;
+  } else if (!strcmp(prop->name, "reg")) {
+    uintptr_t reg;
+    fdt_get_address(prop->node->parent, prop->value, &reg);
+    filter->hart = reg;
+  } else if (!strcmp(prop->name, "status")) {
+    filter->status = (char*)prop->value;
+  }
+}
+
+static void hart_filter_done(const struct fdt_scan_node *node, void *extra)
+{
+  struct hart_filter *filter = (struct hart_filter *)extra;
+
+  if (!filter->compat) return;
+  assert (filter->status);
+  assert (filter->hart >= 0);
+
+  if (((filter->mask >> filter->hart) & 1) && !strcmp(filter->status, "okay")) {
+    strcpy(filter->status, "masked");
+    uint32_t *len = (uint32_t*)filter->status;
+    len[-2] = bswap(strlen("masked")+1);
+  }
+}
+
+void filter_harts(uintptr_t fdt, unsigned long hart_mask)
+{
+  struct fdt_cb cb;
+  struct hart_filter filter;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = hart_filter_open;
+  cb.prop = hart_filter_prop;
+  cb.done = hart_filter_done;
+  cb.extra = &filter;
+
+  filter.mask = hart_mask;
   fdt_scan(fdt, &cb);
 }

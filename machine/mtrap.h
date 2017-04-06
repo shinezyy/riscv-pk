@@ -9,6 +9,9 @@
 # define MAX_HARTS 1
 #endif
 
+// These harts will be prevented from booting beyond bbl
+#define DISABLED_HART_MASK	0x0UL
+
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
@@ -29,7 +32,6 @@ static inline int xlen()
 }
 
 extern uintptr_t mem_size;
-extern uintptr_t num_harts;
 extern volatile uint64_t* mtime;
 extern volatile uint32_t* plic_priorities;
 extern size_t plic_ndevs;

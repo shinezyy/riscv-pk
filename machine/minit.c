@@ -9,7 +9,6 @@
 
 pte_t* root_page_table;
 uintptr_t mem_size;
-uintptr_t num_harts;
 volatile uint64_t* mtime;
 volatile uint32_t* plic_priorities;
 size_t plic_ndevs;
@@ -121,6 +120,13 @@ static void hart_plic_init()
   *HLS()->plic_s_thresh = 0;
 }
 
+static void wake_harts()
+{
+  for (int hart = 0; hart < MAX_HARTS; ++hart)
+    if ((((~DISABLED_HART_MASK & hart_mask) >> hart) & 1))
+      *OTHER_HLS(hart)->ipi = 1; // wakeup the hart
+}
+
 void init_first_hart(uintptr_t hartid, uintptr_t dtb)
 {
   uart_init();
@@ -136,10 +142,12 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   query_mem(dtb);
   printm("querying hart\n");
   query_harts(dtb);
-  printm("querying plic\n");
-  query_plic(dtb);
   printm("querying clint\n");
   query_clint(dtb);
+  printm("querying plic\n");
+  query_plic(dtb);
+
+  wake_harts();
 
   printm("init plic\n");
   plic_init();

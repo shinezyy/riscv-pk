@@ -33,7 +33,7 @@ struct fdt_scan_node {
 struct fdt_scan_prop {
   const struct fdt_scan_node *node;
   const char *name;
-  const uint32_t *value;
+  uint32_t *value;
   int len; // in bytes of value
 };
 
@@ -41,7 +41,7 @@ struct fdt_cb {
   void (*open)(const struct fdt_scan_node *node, void *extra);
   void (*prop)(const struct fdt_scan_prop *prop, void *extra);
   void (*done)(const struct fdt_scan_node *node, void *extra); // last property was seen
-  void (*close)(const struct fdt_scan_node *node, void *extra);
+  int  (*close)(const struct fdt_scan_node *node, void *extra); // -1 => delete the node + children
   void *extra;
 };
 
@@ -52,11 +52,20 @@ uint32_t fdt_size(uintptr_t fdt);
 // Extract fields
 const uint32_t *fdt_get_address(const struct fdt_scan_node *node, const uint32_t *base, uintptr_t *value);
 const uint32_t *fdt_get_size(const struct fdt_scan_node *node, const uint32_t *base, uintptr_t *value);
+int fdt_string_list_index(const struct fdt_scan_prop *prop, const char *str); // -1 if not found
 
 // Setup memory+clint+plic
 void query_mem(uintptr_t fdt);
 void query_harts(uintptr_t fdt);
 void query_plic(uintptr_t fdt);
 void query_clint(uintptr_t fdt);
+
+// Remove information from FDT
+void filter_harts(uintptr_t fdt, unsigned long hart_mask);
+void filter_plic(uintptr_t fdt);
+void filter_compat(uintptr_t fdt, const char *compat);
+
+// The hartids of available harts
+extern uint64_t hart_mask;
 
 #endif
