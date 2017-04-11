@@ -36,12 +36,12 @@ void uart_send_buf(const char *buf, const int32_t len) {
 	}
 }
 
-uint8_t uart_recv() {
-	// wait until RBR has data
-	while(! (*(uart_base_ptr + UART_STAT_REG) & 0x01u));
-
+int uart_recv() {
+	// check whether RBR has data
+	if(! (*(uart_base_ptr + UART_STAT_REG) & 0x01u)) {
+		return -1;
+	}
 	return *(uart_base_ptr + UART_RX_FIFO_REG);
-
 }
 
 // IRQ triggered read
