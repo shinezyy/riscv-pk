@@ -129,14 +129,13 @@ static void wake_harts()
 
 void init_first_hart(uintptr_t hartid, uintptr_t dtb)
 {
-  uart_init();
+  // Confirm console as early as possible
+  query_uart(dtb);
+  printm("SBI console now online\n");
   printm("line %d: hartid = %d\n", __LINE__, hartid);
+
   hart_init();
   hls_init(0); // this might get called again from parse_config_string
-
-  // Confirm console as early as possible
-  //query_uart(dtb);
-  printm("SBI console now online\n");
 
   printm("querying memory\n");
   query_mem(dtb);
