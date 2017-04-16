@@ -1,6 +1,7 @@
 #include <string.h>
 #include "uart.h"
 #include "fdt.h"
+#include "mtrap.h"
 
 volatile uint8_t* uart_base_ptr;
 
@@ -103,6 +104,8 @@ void query_uart(uintptr_t fdt)
   if(!uart_base_ptr) {
 	  uart_base_ptr = (void *)0x60000000;
   }
+
+  uart_base_ptr += read_const_csr(mhartid) * 0x10000;
 
   // reset the receive FIFO and transmit FIFO
   *(uart_base_ptr + UART_CTRL_REG) = 0x3;
