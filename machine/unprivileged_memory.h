@@ -2,6 +2,7 @@
 #define _RISCV_MISALIGNED_H
 
 #include "encoding.h"
+#include "bits.h"
 #include <stdint.h>
 
 #define DECLARE_UNPRIVILEGED_LOAD_FUNCTION(type, insn)              \
@@ -68,7 +69,7 @@ static uintptr_t __attribute__((always_inline)) get_insn(uintptr_t mepc, uintptr
   uintptr_t val;
 #ifndef __riscv_compressed
   asm ("csrrs %[mstatus], mstatus, %[mprv]\n"
-       "lw %[insn], (%[addr])\n"
+       STR(LWU) " %[insn], (%[addr])\n"
        "csrw mstatus, %[mstatus]"
        : [mstatus] "+&r" (__mstatus), [insn] "=&r" (val)
        : [mprv] "r" (MSTATUS_MPRV | MSTATUS_MXR), [addr] "r" (__mepc));
@@ -78,7 +79,7 @@ static uintptr_t __attribute__((always_inline)) get_insn(uintptr_t mepc, uintptr
        "lhu %[insn], (%[addr])\n"
        "and %[tmp], %[insn], %[rvc_mask]\n"
        "bne %[tmp], %[rvc_mask], 1f\n"
-       "lh %[tmp], 2(%[addr])\n"
+       "lhu %[tmp], 2(%[addr])\n"
        "sll %[tmp], %[tmp], 16\n"
        "add %[insn], %[insn], %[tmp]\n"
        "1: csrw mstatus, %[mstatus]"

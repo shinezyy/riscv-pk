@@ -60,7 +60,7 @@ void uart_disable_read_irq() {
 struct uart_scan
 {
   int compat;
-  uintptr_t reg;
+  uint64_t reg;
 };
 
 static void uart_open(const struct fdt_scan_node *node, void *extra)
