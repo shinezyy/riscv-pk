@@ -132,7 +132,7 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   // Confirm console as early as possible
   query_uart(dtb);
   printm("SBI console now online\n");
-  printm("line %d: hartid = %d\n", __LINE__, hartid);
+  printm("line %d: hartid = %d, build time: %s %s\n", __LINE__, hartid, __TIME__, __DATE__);
 
   hart_init();
   hls_init(0); // this might get called again from parse_config_string
