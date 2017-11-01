@@ -30,6 +30,9 @@ trap_table:
   .globl reset_vector
 reset_vector:
   j do_reset
+  .align 2
+magic_num:
+  .word 0xdeadbeef
 
 trap_vector:
   csrrw sp, mscratch, sp
