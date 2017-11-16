@@ -127,12 +127,45 @@ static void wake_harts()
       *OTHER_HLS(hart)->ipi = 1; // wakeup the hart
 }
 
+#define DTB_EXTERNAL_OK 0
+#define DTB_EXTERNAL_TOO_LARGE 1
+#define DTB_EXTERNAL_INVALID 2
+
 void init_first_hart(uintptr_t hartid, uintptr_t dtb)
 {
+  extern uint32_t external_dtb;
+  uint32_t *p_external_dtb = &external_dtb;
+  int dtb_flag;
+  if (bswap(p_external_dtb[0]) == FDT_MAGIC) {
+    // if the external dtb is valid, use it
+    if (bswap(p_external_dtb[1]) < 0x1000) {
+      dtb = (uintptr_t)p_external_dtb;
+      dtb_flag = DTB_EXTERNAL_OK;
+    }
+    else {
+      dtb_flag = DTB_EXTERNAL_TOO_LARGE;
+    }
+  }
+  else {
+    dtb_flag = DTB_EXTERNAL_INVALID;
+  }
+
   // Confirm console as early as possible
   query_uart(dtb);
   printm("SBI console now online\n");
   printm("line %d: hartid = %d, build time: %s %s\n", __LINE__, hartid, __TIME__, __DATE__);
+  switch (dtb_flag) {
+    case DTB_EXTERNAL_OK:
+      printm("Use external dtb.\n");
+      break;
+    case DTB_EXTERNAL_TOO_LARGE:
+      printm("The external dtb is too large(size = %d). Use default dtb.\n", bswap(p_external_dtb[1]));
+      break;
+    case DTB_EXTERNAL_INVALID:
+      printm("The external dtb is invalid(magic number = %x). Use default dtb.\n", bswap(p_external_dtb[0]));
+      break;
+    default: die("bad value for dtb_flag = %d", dtb_flag);
+  }
 
   hart_init();
   hls_init(0); // this might get called again from parse_config_string
