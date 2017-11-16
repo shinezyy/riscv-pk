@@ -4,6 +4,13 @@
 #define FDT_MAGIC	0xd00dfeed
 #define FDT_VERSION	17
 
+static inline uint32_t bswap(uint32_t x)
+{
+  uint32_t y = (x & 0x00FF00FF) <<  8 | (x & 0xFF00FF00) >>  8;
+  uint32_t z = (y & 0x0000FFFF) << 16 | (y & 0xFFFF0000) >> 16;
+  return z;
+}
+
 struct fdt_header {
   uint32_t magic;
   uint32_t totalsize;

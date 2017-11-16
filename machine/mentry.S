@@ -34,6 +34,11 @@ reset_vector:
 magic_num:
   .word 0xdeadbeef
 
+  .global external_dtb
+  .align 3
+external_dtb:
+  .fill 0x1000
+
 trap_vector:
   csrrw sp, mscratch, sp
   beqz sp, .Ltrap_from_machine_mode
