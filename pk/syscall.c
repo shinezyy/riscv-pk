@@ -301,7 +301,7 @@ int sys_uname(void* buf)
   const int sz = 65;
   strcpy(buf + 0*sz, "Proxy Kernel");
   strcpy(buf + 1*sz, "");
-  strcpy(buf + 2*sz, "3.4.5");
+  strcpy(buf + 2*sz, "4.15.0");
   strcpy(buf + 3*sz, "");
   strcpy(buf + 4*sz, "");
   strcpy(buf + 5*sz, "");
@@ -442,6 +442,7 @@ long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, unsigned l
     [SYS_munmap] = sys_munmap,
     [SYS_mremap] = sys_mremap,
     [SYS_mprotect] = sys_mprotect,
+    [SYS_prlimit64] = sys_stub_nosys,
     [SYS_rt_sigaction] = sys_rt_sigaction,
     [SYS_gettimeofday] = sys_gettimeofday,
     [SYS_times] = sys_times,

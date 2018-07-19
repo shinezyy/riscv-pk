@@ -56,7 +56,7 @@ trap_vector:
   li a0, IRQ_M_TIMER * 2
   bne a0, a1, 1f
 
-  # Yes.  Simply clear MSIE and raise SSIP.
+  # Yes.  Simply clear MTIE and raise STIP.
   li a0, MIP_MTIP
   csrc mie, a0
   li a0, MIP_STIP
@@ -84,8 +84,8 @@ trap_vector:
   addi a0, sp, MENTRY_IPI_PENDING_OFFSET
   amoswap.w a0, x0, (a0)
 #else
-  lw a0, MENTRY_IPI_PENDING_OFFSET(a0)
-  sw x0, MENTRY_IPI_PENDING_OFFSET(a0)
+  lw a0, MENTRY_IPI_PENDING_OFFSET(sp)
+  sw x0, MENTRY_IPI_PENDING_OFFSET(sp)
 #endif
   and a1, a0, IPI_SOFT
   beqz a1, 1f
@@ -98,6 +98,11 @@ trap_vector:
   andi a1, a0, IPI_SFENCE_VMA
   beqz a1, 1f
   sfence.vma
+1:
+  andi a1, a0, IPI_HALT
+  beqz a1, 1f
+  wfi
+  j 1b
 1:
   j .Lmret
 
@@ -265,12 +270,8 @@ do_reset:
   slli a2, a3, RISCV_PGSHIFT
   add sp, sp, a2
 
-  # Boot on the first unmasked hart
-  li a4, (~DISABLED_HART_MASK & (DISABLED_HART_MASK+1))
-  srl a4, a4, a3
-  andi a4, a4, 1
-#  bnez a4, init_first_hart
-  tail init_first_hart
+  # Boot on the first hart
+  beqz a3, init_first_hart
 
   # set MSIE bit to receive IPI
   li a2, MIP_MSIP
@@ -282,7 +283,8 @@ do_reset:
   wfi
 
   # masked harts never start
-  li a4, DISABLED_HART_MASK
+  la a4, disabled_hart_mask
+  LOAD a4, 0(a4)
   srl a4, a4, a3
   andi a4, a4, 1
   bnez a4, .LmultiHart

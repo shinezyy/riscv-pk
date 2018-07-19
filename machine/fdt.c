@@ -1,7 +1,24 @@
+// See LICENSE for license details.
+
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include "config.h"
 #include "fdt.h"
 #include "mtrap.h"
+
+static inline int isstring(char c)
+{
+  if (c >= 'A' && c <= 'Z')
+    return 1;
+  if (c >= 'a' && c <= 'z')
+    return 1;
+  if (c >= '0' && c <= '9')
+    return 1;
+  if (c == '\0' || c == ' ' || c == ',' || c == '-')
+    return 1;
+  return 0;
+}
 
 static uint32_t *fdt_scan_helper(
   uint32_t *lex,
@@ -526,19 +543,78 @@ void filter_compat(uintptr_t fdt, const char *compat)
   fdt_scan(fdt, &cb);
 }
 
+//////////////////////////////////////////// CHOSEN SCAN ////////////////////////////////////////
+
+struct chosen_scan {
+  const struct fdt_scan_node *chosen;
+  void* kernel_start;
+  void* kernel_end;
+};
+
+static void chosen_open(const struct fdt_scan_node *node, void *extra)
+{
+  struct chosen_scan *scan = (struct chosen_scan *)extra;
+  if (!strcmp(node->name, "chosen")) {
+    scan->chosen = node;
+  }
+}
+
+static int chosen_close(const struct fdt_scan_node *node, void *extra)
+{
+  struct chosen_scan *scan = (struct chosen_scan *)extra;
+  if (scan->chosen && scan->chosen == node) {
+    scan->chosen = NULL;
+  }
+  return 0;
+}
+
+static void chosen_prop(const struct fdt_scan_prop *prop, void *extra)
+{
+  struct chosen_scan *scan = (struct chosen_scan *)extra;
+  uint64_t val;
+  if (!scan->chosen) return;
+  if (!strcmp(prop->name, "riscv,kernel-start")) {
+    fdt_get_address(prop->node->parent, prop->value, &val);
+    scan->kernel_start = (void*)(uintptr_t)val;
+  } else if (!strcmp(prop->name, "riscv,kernel-end")) {
+    fdt_get_address(prop->node->parent, prop->value, &val);
+    scan->kernel_end = (void*)(uintptr_t)val;
+  }
+}
+
+void query_chosen(uintptr_t fdt)
+{
+  struct fdt_cb cb;
+  struct chosen_scan chosen;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = chosen_open;
+  cb.close = chosen_close;
+  cb.prop = chosen_prop;
+
+  memset(&chosen, 0, sizeof(chosen));
+  cb.extra = &chosen;
+
+  fdt_scan(fdt, &cb);
+  kernel_start = chosen.kernel_start;
+  kernel_end = chosen.kernel_end;
+}
+
 //////////////////////////////////////////// HART FILTER ////////////////////////////////////////
 
 struct hart_filter {
   int compat;
   int hart;
   char *status;
-  unsigned long mask;
+  char *mmu_type;
+  long *disabled_hart_mask;
 };
 
 static void hart_filter_open(const struct fdt_scan_node *node, void *extra)
 {
   struct hart_filter *filter = (struct hart_filter *)extra;
-  filter->status = 0;
+  filter->status = NULL;
+  filter->mmu_type = NULL;
   filter->compat = 0;
   filter->hart = -1;
 }
@@ -554,7 +630,20 @@ static void hart_filter_prop(const struct fdt_scan_prop *prop, void *extra)
     filter->hart = reg;
   } else if (!strcmp(prop->name, "status")) {
     filter->status = (char*)prop->value;
+  } else if (!strcmp(prop->name, "mmu-type")) {
+    filter->mmu_type = (char*)prop->value;
   }
+}
+
+static bool hart_filter_mask(const struct hart_filter *filter)
+{
+  if (filter->mmu_type == NULL) return true;
+  if (strcmp(filter->status, "okay")) return true;
+  if (!strcmp(filter->mmu_type, "riscv,sv39")) return false;
+  if (!strcmp(filter->mmu_type, "riscv,sv48")) return false;
+  printm("hart_filter_mask saw unknown hart type: status=\"%s\", mmu_type=\"%s\"\n",
+         filter->status, filter->mmu_type);
+  return true;
 }
 
 static void hart_filter_done(const struct fdt_scan_node *node, void *extra)
@@ -565,14 +654,15 @@ static void hart_filter_done(const struct fdt_scan_node *node, void *extra)
   assert (filter->status);
   assert (filter->hart >= 0);
 
-  if (((filter->mask >> filter->hart) & 1) && !strcmp(filter->status, "okay")) {
+  if (hart_filter_mask(filter)) {
     strcpy(filter->status, "masked");
     uint32_t *len = (uint32_t*)filter->status;
     len[-2] = bswap(strlen("masked")+1);
+    *filter->disabled_hart_mask |= (1 << filter->hart);
   }
 }
 
-void filter_harts(uintptr_t fdt, unsigned long hart_mask)
+void filter_harts(uintptr_t fdt, long *disabled_hart_mask)
 {
   struct fdt_cb cb;
   struct hart_filter filter;
@@ -583,6 +673,120 @@ void filter_harts(uintptr_t fdt, unsigned long hart_mask)
   cb.done = hart_filter_done;
   cb.extra = &filter;
 
-  filter.mask = hart_mask;
+  filter.disabled_hart_mask = disabled_hart_mask;
+  *disabled_hart_mask = 0;
   fdt_scan(fdt, &cb);
 }
+
+//////////////////////////////////////////// PRINT //////////////////////////////////////////////
+
+#ifdef PK_PRINT_DEVICE_TREE
+#define FDT_PRINT_MAX_DEPTH 32
+
+struct fdt_print_info {
+  int depth;
+  const struct fdt_scan_node *stack[FDT_PRINT_MAX_DEPTH];
+};
+
+void fdt_print_printm(struct fdt_print_info *info, const char *format, ...)
+{
+  va_list vl;
+
+  for (int i = 0; i < info->depth; ++i)
+    printm("  ");
+
+  va_start(vl, format);
+  vprintm(format, vl);
+  va_end(vl);
+}
+
+static void fdt_print_open(const struct fdt_scan_node *node, void *extra)
+{
+  struct fdt_print_info *info = (struct fdt_print_info *)extra;
+
+  while (node->parent != NULL && info->stack[info->depth-1] != node->parent) {
+    info->depth--;
+    fdt_print_printm(info, "}\r\n");
+  }
+
+  fdt_print_printm(info, "%s {\r\n", node->name);
+  info->stack[info->depth] = node;
+  info->depth++;
+}
+
+static void fdt_print_prop(const struct fdt_scan_prop *prop, void *extra)
+{
+  struct fdt_print_info *info = (struct fdt_print_info *)extra;
+  int asstring = 1;
+  char *char_data = (char *)(prop->value);
+
+  fdt_print_printm(info, "%s", prop->name);
+
+  if (prop->len == 0) {
+    printm(";\r\n");
+    return;
+  } else {
+    printm(" = ");
+  }
+
+  /* It appears that dtc uses a hueristic to detect strings so I'm using a
+   * similar one here. */
+  for (int i = 0; i < prop->len; ++i) {
+    if (!isstring(char_data[i]))
+      asstring = 0;
+    if (i > 0 && char_data[i] == '\0' && char_data[i-1] == '\0')
+      asstring = 0;
+  }
+
+  if (asstring) {
+    for (size_t i = 0; i < prop->len; i += strlen(char_data + i) + 1) {
+      if (i != 0)
+        printm(", ");
+      printm("\"%s\"", char_data + i);
+    }
+  } else {
+    printm("<");
+    for (size_t i = 0; i < prop->len/4; ++i) {
+      if (i != 0)
+        printm(" ");
+      printm("0x%08x", bswap(prop->value[i]));
+    }
+    printm(">");
+  }
+
+  printm(";\r\n");
+}
+
+static void fdt_print_done(const struct fdt_scan_node *node, void *extra)
+{
+  struct fdt_print_info *info = (struct fdt_print_info *)extra;
+}
+
+static int fdt_print_close(const struct fdt_scan_node *node, void *extra)
+{
+  struct fdt_print_info *info = (struct fdt_print_info *)extra;
+  return 0;
+}
+
+void fdt_print(uintptr_t fdt)
+{
+  struct fdt_print_info info;
+  struct fdt_cb cb;
+
+  info.depth = 0;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = fdt_print_open;
+  cb.prop = fdt_print_prop;
+  cb.done = fdt_print_done;
+  cb.close = fdt_print_close;
+  cb.extra = &info;
+
+  fdt_scan(fdt, &cb);
+
+  while (info.depth > 0) {
+    info.depth--;
+    fdt_print_printm(&info, "}\r\n");
+  }
+}
+#endif
