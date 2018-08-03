@@ -5,6 +5,7 @@
 #include "vm.h"
 #include "fp_emulation.h"
 #include "fdt.h"
+#include "uartlite.h"
 #include "uart.h"
 #include "uart16550.h"
 #include "finisher.h"
@@ -172,9 +173,10 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   }
 
   // Confirm console as early as possible
-  query_uart(dtb);
-  query_uart16550(dtb);
-  query_htif(dtb);
+  query_uartlite(dtb);
+  //query_uart(dtb);
+  //query_uart16550(dtb);
+  //query_htif(dtb);
   printm("bbl loader\r\n");
   printm("SBI console now online\n");
   printm("line %d: hartid = %d, build time: %s %s\n", __LINE__, hartid, __TIME__, __DATE__);

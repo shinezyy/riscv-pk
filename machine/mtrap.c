@@ -8,6 +8,7 @@
 #include "vm.h"
 #include "uart.h"
 #include "uart16550.h"
+#include "uartlite.h"
 #include "finisher.h"
 #include "fdt.h"
 #include "unprivileged_memory.h"
@@ -23,7 +24,8 @@ void __attribute__((noreturn)) bad_trap(uintptr_t* regs, uintptr_t dummy, uintpt
 
 static uintptr_t mcall_console_putchar(uint8_t ch)
 {
-	/*
+  uartlite_putchar(ch);
+  /*
   if (uart) {
     uart_putchar(ch);
   } else if (uart16550) {
@@ -32,7 +34,6 @@ static uintptr_t mcall_console_putchar(uint8_t ch)
     htif_console_putchar(ch);
   }
   */
-  uart_send(ch);
   return 0;
 }
 
@@ -68,7 +69,9 @@ static void send_ipi(uintptr_t recipient, int event)
 
 static uintptr_t mcall_console_getchar()
 {
-	/*
+  return uartlite_getchar();
+
+  /*
   if (uart) {
     return uart_getchar();
   } else if (uart16550) {
@@ -79,7 +82,6 @@ static uintptr_t mcall_console_getchar()
     return '\0';
   }
   */
-  return uart_recv();
 }
 
 static uintptr_t mcall_clear_ipi()

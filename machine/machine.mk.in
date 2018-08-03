@@ -13,6 +13,7 @@ machine_hdrs = \
   htif.h \
   mcall.h \
   mtrap.h \
+  uartlite.h \
   uart.h \
   uart16550.h \
   finisher.h \
@@ -28,6 +29,7 @@ machine_c_srcs = \
   muldiv_emulation.c \
   fp_emulation.c \
   fp_ldst.c \
+  uartlite.c \
   uart.c \
   uart16550.c \
   finisher.c \
