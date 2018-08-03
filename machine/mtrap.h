@@ -5,6 +5,8 @@
 
 #include "encoding.h"
 
+#define MAX_EXTERNAL_DTB_SIZE 0x4000
+
 #ifdef __riscv_atomic
 # define MAX_HARTS 8 // arbitrary
 #else

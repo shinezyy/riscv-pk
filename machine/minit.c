@@ -160,7 +160,7 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   int dtb_flag;
   if (bswap(p_external_dtb[0]) == FDT_MAGIC) {
     // if the external dtb is valid, use it
-    if (bswap(p_external_dtb[1]) < 0x1000) {
+    if (bswap(p_external_dtb[1]) < MAX_EXTERNAL_DTB_SIZE) {
       dtb = (uintptr_t)p_external_dtb;
       dtb_flag = DTB_EXTERNAL_OK;
     }
