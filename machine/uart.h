@@ -1,7 +1,6 @@
 // See LICENSE for license details.
-
-#ifndef UART_HEADER_H
-#define UART_HEADER_H
+#ifndef _RISCV_UART_H
+#define _RISCV_UART_H
 
 #include <stdint.h>
 

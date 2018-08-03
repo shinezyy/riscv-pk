@@ -1,3 +1,5 @@
+// See LICENSE for license details.
+
 #include "pk.h"
 #include "mmap.h"
 #include "boot.h"
@@ -7,6 +9,7 @@
 #include <stdbool.h>
 
 elf_info current;
+long disabled_hart_mask;
 
 static void handle_option(const char* s)
 {
@@ -160,7 +163,7 @@ void boot_loader(uintptr_t dtb)
   write_csr(stvec, &trap_entry);
   write_csr(sscratch, 0);
   write_csr(sie, 0);
-  set_csr(sstatus, SSTATUS_SUM);
+  set_csr(sstatus, SSTATUS_SUM | SSTATUS_FS);
 
   file_init();
   enter_supervisor_mode(rest_of_boot_loader, pk_vm_init(), 0);

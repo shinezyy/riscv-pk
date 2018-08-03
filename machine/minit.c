@@ -1,9 +1,15 @@
+// See LICENSE for license details.
+
 #include "mtrap.h"
 #include "atomic.h"
 #include "vm.h"
 #include "fp_emulation.h"
 #include "fdt.h"
 #include "uart.h"
+#include "uart16550.h"
+#include "finisher.h"
+#include "disabled_hart_mask.h"
+#include "htif.h"
 #include <string.h>
 #include <limits.h>
 
@@ -12,26 +18,34 @@ uintptr_t mem_size;
 volatile uint64_t* mtime;
 volatile uint32_t* plic_priorities;
 size_t plic_ndevs;
+void* kernel_start;
+void* kernel_end;
 
 static void mstatus_init()
 {
   // Enable FPU
-  write_csr(mstatus, MSTATUS_FS);
+  if (supports_extension('D') || supports_extension('F'))
+    write_csr(mstatus, MSTATUS_FS);
 
   // Enable user/supervisor use of perf counters
-  write_csr(scounteren, -1);
+  if (supports_extension('S'))
+    write_csr(scounteren, -1);
   write_csr(mcounteren, -1);
 
   // Enable software interrupts
   write_csr(mie, MIP_MSIP);
 
   // Disable paging
-  write_csr(sptbr, 0);
+  if (supports_extension('S'))
+    write_csr(sptbr, 0);
 }
 
 // send S-mode interrupts and most exceptions straight to S-mode
 static void delegate_traps()
 {
+  if (!supports_extension('S'))
+    return;
+
   uintptr_t interrupts = MIP_SSIP | MIP_STIP | MIP_SEIP;
   uintptr_t exceptions =
     (1U << CAUSE_MISALIGNED_FETCH) |
@@ -39,7 +53,6 @@ static void delegate_traps()
     (1U << CAUSE_BREAKPOINT) |
     (1U << CAUSE_LOAD_PAGE_FAULT) |
     (1U << CAUSE_STORE_PAGE_FAULT) |
-    (1U << CAUSE_BREAKPOINT) |
     (1U << CAUSE_USER_ECALL);
 
   write_csr(mideleg, interrupts);
@@ -50,11 +63,12 @@ static void delegate_traps()
 
 static void fp_init()
 {
+  if (!supports_extension('D') && !supports_extension('F'))
+    return;
+
   assert(read_csr(mstatus) & MSTATUS_FS);
 
 #ifdef __riscv_flen
-  if (!supports_extension('D'))
-    die("FPU not found; recompile pk with -msoft-float");
   for (int i = 0; i < 32; i++)
     init_fp_reg(i);
   write_csr(fcsr, 0);
@@ -114,16 +128,23 @@ static void hart_plic_init()
     return;
 
   size_t ie_words = plic_ndevs / sizeof(uintptr_t) + 1;
-  for (size_t i = 0; i < ie_words; i++)
-    HLS()->plic_s_ie[i] = ULONG_MAX;
+  for (size_t i = 0; i < ie_words; i++) {
+     if (HLS()->plic_s_ie) {
+        // Supervisor not always present
+        HLS()->plic_s_ie[i] = ULONG_MAX;
+     }
+  }
   *HLS()->plic_m_thresh = 1;
-  *HLS()->plic_s_thresh = 0;
+  if (HLS()->plic_s_thresh) {
+      // Supervisor not always present
+      *HLS()->plic_s_thresh = 0;
+  }
 }
 
 static void wake_harts()
 {
   for (int hart = 0; hart < MAX_HARTS; ++hart)
-    if ((((~DISABLED_HART_MASK & hart_mask) >> hart) & 1))
+    if ((((~disabled_hart_mask & hart_mask) >> hart) & 1))
       *OTHER_HLS(hart)->ipi = 1; // wakeup the hart
 }
 
@@ -152,6 +173,9 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
 
   // Confirm console as early as possible
   query_uart(dtb);
+  query_uart16550(dtb);
+  query_htif(dtb);
+  printm("bbl loader\r\n");
   printm("SBI console now online\n");
   printm("line %d: hartid = %d, build time: %s %s\n", __LINE__, hartid, __TIME__, __DATE__);
   switch (dtb_flag) {
@@ -170,6 +194,9 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   hart_init();
   hls_init(0); // this might get called again from parse_config_string
 
+  // Find the power button early as well so die() works
+  query_finisher(dtb);
+
   printm("querying memory\n");
   query_mem(dtb);
   printm("querying hart\n");
@@ -178,6 +205,7 @@ void init_first_hart(uintptr_t hartid, uintptr_t dtb)
   query_clint(dtb);
   printm("querying plic\n");
   query_plic(dtb);
+  query_chosen(dtb);
 
   wake_harts();
 
@@ -217,6 +245,10 @@ void enter_supervisor_mode(void (*fn)(uintptr_t), uintptr_t arg0, uintptr_t arg1
   mstatus = INSERT_FIELD(mstatus, MSTATUS_MPIE, 0);
   write_csr(mstatus, mstatus);
   write_csr(mscratch, MACHINE_STACK_TOP() - MENTRY_FRAME_SIZE);
+#ifndef __riscv_flen
+  uintptr_t *p_fcsr = MACHINE_STACK_TOP() - MENTRY_FRAME_SIZE; // the x0's save slot
+  *p_fcsr = 0;
+#endif
   write_csr(mepc, fn);
 
   register uintptr_t a0 asm ("a0") = arg0;

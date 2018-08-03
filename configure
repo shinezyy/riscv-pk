@@ -590,8 +590,10 @@ ac_subst_vars='LTLIBOBJS
 LIBOBJS
 subprojects_enabled
 subprojects
+BBL_LOGO_FILE
 BBL_PAYLOAD
-install_subdir
+BBL_ENABLE_LOGO
+WITH_ARCH
 RISCV
 EGREP
 GREP
@@ -668,11 +670,13 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_stow
-enable_32bit
+with_arch
+enable_print_device_tree
 enable_optional_subprojects
 enable_vm
 enable_logo
 with_payload
+with_logo
 enable_fp_emulation
 '
       ac_precious_vars='build_alias
@@ -1315,7 +1319,8 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-stow           Enable stow-based install
-  --enable-32bit          Build a 32-bit pk
+  --enable-print-device-tree
+                          Print DTS when booting
   --enable-optional-subprojects
                           Enable all optional subprojects
   --disable-vm            Disable virtual memory
@@ -1325,7 +1330,9 @@ Optional Features:
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-arch             Set the RISC-V architecture
   --with-payload          Set ELF payload for bbl
+  --with-logo             Specify a better logo
 
 Some influential environment variables:
   CC          C compiler command
@@ -4065,33 +4072,34 @@ fi
 # Set compiler flags
 #-------------------------------------------------------------------------
 
-default_CFLAGS="-Wall -Werror -D__NO_INLINE__ -mcmodel=medany -O2 -std=gnu99 -Wno-unused -Wno-attributes -fno-delete-null-pointer-checks"
 
-# Check whether --enable-32bit was given.
-if test "${enable_32bit+set}" = set; then :
-  enableval=$enable_32bit; BUILD_32BIT=$enableval
-else
-  BUILD_32BIT=no
+# Check whether --with-arch was given.
+if test "${with_arch+set}" = set; then :
+  withval=$with_arch; WITH_ARCH=$with_arch
+
 fi
 
 
-case "${BUILD_32BIT}" in
-  yes|default)
-	echo "Building 32-bit pk"
-	CFLAGS="$default_CFLAGS -m32"
-	LDFLAGS="-m32"
-	install_subdir="riscv32-unknown-elf"
-	;;
-  *)
-	CFLAGS="$default_CFLAGS"
-	LDFLAGS=
-	install_subdir="riscv64-unknown-elf"
-	;;
-esac
+# Check whether --enable-print-device-tree was given.
+if test "${enable_print_device_tree+set}" = set; then :
+  enableval=$enable_print_device_tree;
+fi
+
+if test "x$enable_print_device_tree" == "xyes"; then :
+
+
+$as_echo "#define PK_PRINT_DEVICE_TREE /**/" >>confdefs.h
+
+
+fi
+
+CFLAGS="-Wall -Werror -D__NO_INLINE__ -mcmodel=medany -O2 -std=gnu99 -Wno-unused -Wno-attributes -fno-delete-null-pointer-checks -fno-PIE"
+LDFLAGS="$LDFLAGS -Wl,--build-id=none"
 
 
 
 LIBS="-lgcc"
+
 
 
 
@@ -4156,7 +4164,9 @@ $as_echo "$as_me: configuring default subproject : pk" >&6;}
 
 $as_echo "#define PK_ENABLED /**/" >>confdefs.h
 
-      # Check whether --enable-vm was given.
+      # See LICENSE for license details.
+
+# Check whether --enable-vm was given.
 if test "${enable_vm+set}" = set; then :
   enableval=$enable_vm;
 fi
@@ -4213,12 +4223,16 @@ $as_echo "$as_me: configuring default subproject : bbl" >&6;}
 
 $as_echo "#define BBL_ENABLED /**/" >>confdefs.h
 
-      # Check whether --enable-logo was given.
+      # See LICENSE for license details.
+
+# Check whether --enable-logo was given.
 if test "${enable_logo+set}" = set; then :
   enableval=$enable_logo;
 fi
 
 if test "x$enable_logo" == "xyes"; then :
+
+  BBL_ENABLE_LOGO=1
 
 
 $as_echo "#define PK_ENABLE_LOGO /**/" >>confdefs.h
@@ -4229,10 +4243,31 @@ fi
 
 # Check whether --with-payload was given.
 if test "${with_payload+set}" = set; then :
-  withval=$with_payload; BBL_PAYLOAD=$with_payload
+  withval=$with_payload;
+   BBL_PAYLOAD=$with_payload
+
+
+$as_echo "#define RELAXED_ALIGNMENT 0" >>confdefs.h
+
 
 else
-  BBL_PAYLOAD=dummy_payload
+
+   BBL_PAYLOAD=dummy_payload
+
+
+$as_echo "#define RELAXED_ALIGNMENT 1" >>confdefs.h
+
+
+fi
+
+
+
+# Check whether --with-logo was given.
+if test "${with_logo+set}" = set; then :
+  withval=$with_logo; BBL_LOGO_FILE=$with_logo
+
+else
+  BBL_LOGO_FILE=riscv_logo.txt
 
 fi
 
@@ -4371,7 +4406,9 @@ $as_echo "$as_me: configuring default subproject : machine" >&6;}
 
 $as_echo "#define MACHINE_ENABLED /**/" >>confdefs.h
 
-      # Check whether --enable-fp-emulation was given.
+      # See LICENSE for license details.
+
+# Check whether --enable-fp-emulation was given.
 if test "${enable_fp_emulation+set}" = set; then :
   enableval=$enable_fp_emulation;
 fi

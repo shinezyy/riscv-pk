@@ -1,3 +1,5 @@
+/* See LICENSE for license details. */
+
 OUTPUT_ARCH( "riscv" )
 
 ENTRY( reset_vector )
@@ -46,6 +48,7 @@ SECTIONS
   . = ALIGN(0x1000);
   .htif :
   {
+    PROVIDE( __htif_base = .);
     *(.htif)
   }
   . = ALIGN(0x1000);
