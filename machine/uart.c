@@ -3,64 +3,31 @@
 #include <string.h>
 #include "uart.h"
 #include "fdt.h"
-#include "mtrap.h"
 
-volatile uint8_t* uart_base_ptr;
+volatile uint32_t* uart;
 
-#define UART_RX_FIFO_REG 0
-#define UART_TX_FIFO_REG 0x4
-#define UART_STAT_REG 0x8
-#define UART_CTRL_REG 0xc
-
-void uart_send(uint8_t data) {
-	// wait until THR empty
-	while((*(uart_base_ptr + UART_STAT_REG) & 0x08));
-	*(uart_base_ptr + UART_TX_FIFO_REG) = data;
-
-  if (data == '\n') {
-    uart_send('\r');
-  }
+void uart_putchar(uint8_t ch)
+{
+#ifdef __riscv_atomic
+    int32_t r;
+    do {
+      __asm__ __volatile__ (
+        "amoor.w %0, %2, %1\n"
+        : "=r" (r), "+A" (uart[UART_REG_TXFIFO])
+        : "r" (ch));
+    } while (r < 0);
+#else
+    volatile uint32_t *tx = uart + UART_REG_TXFIFO;
+    while ((int32_t)(*tx) < 0);
+    *tx = ch;
+#endif
 }
 
-void uart_send_string(const char *str) {
-	while(*str != 0) {
-		uart_send(*(str++));
-	}
-}
-
-void uart_send_buf(const char *buf, const int32_t len) {
-	int32_t i;
-	for(i=0; i<len; i++) {
-		uart_send(buf[i]);
-	}
-}
-
-int uart_recv() {
-	// check whether RBR has data
-	if(! (*(uart_base_ptr + UART_STAT_REG) & 0x01u)) {
-		return -1;
-	}
-	return *(uart_base_ptr + UART_RX_FIFO_REG);
-}
-
-// IRQ triggered read
-uint8_t uart_read_irq() {
-	return *(uart_base_ptr + UART_RX_FIFO_REG);
-}
-
-// check uart IRQ for read
-uint8_t uart_check_read_irq() {
-	return (*(uart_base_ptr + UART_STAT_REG) & 0x01u);
-}
-
-// enable uart read IRQ
-void uart_enable_read_irq() {
-	*(uart_base_ptr + UART_CTRL_REG) = 0x0010u;
-}
-
-// disable uart read IRQ
-void uart_disable_read_irq() {
-	*(uart_base_ptr + UART_CTRL_REG) = 0x0000u;
+int uart_getchar()
+{
+  int32_t ch = uart[UART_REG_RXFIFO];
+  if (ch < 0) return -1;
+  return ch;
 }
 
 struct uart_scan
@@ -88,10 +55,12 @@ static void uart_prop(const struct fdt_scan_prop *prop, void *extra)
 static void uart_done(const struct fdt_scan_node *node, void *extra)
 {
   struct uart_scan *scan = (struct uart_scan *)extra;
-  if (!scan->compat || !scan->reg || uart_base_ptr) return;
+  if (!scan->compat || !scan->reg || uart) return;
 
   // Enable Rx/Tx channels
-  uart_base_ptr = (void*)scan->reg;
+  uart = (void*)(uintptr_t)scan->reg;
+  uart[UART_REG_TXCTRL] = UART_TXEN;
+  uart[UART_REG_RXCTRL] = UART_RXEN;
 }
 
 void query_uart(uintptr_t fdt)
@@ -106,13 +75,4 @@ void query_uart(uintptr_t fdt)
   cb.extra = &scan;
 
   fdt_scan(fdt, &cb);
-
-  if(!uart_base_ptr) {
-	  uart_base_ptr = (void *)0x60000000;
-  }
-
-  uart_base_ptr += read_const_csr(mhartid) * 0x10000;
-
-  // reset the receive FIFO and transmit FIFO
-  *(uart_base_ptr + UART_CTRL_REG) = 0x3;
 }
