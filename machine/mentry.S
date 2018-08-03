@@ -37,7 +37,7 @@ magic_num:
   .global external_dtb
   .align 3
 external_dtb:
-  .fill 0x1000
+  .fill MAX_EXTERNAL_DTB_SIZE
 
 trap_vector:
   csrrw sp, mscratch, sp
