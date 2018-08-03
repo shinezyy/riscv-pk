@@ -7,23 +7,23 @@
   .align 6
 trap_table:
 #define BAD_TRAP_VECTOR 0
-  .word bad_trap
-  .word pmp_trap
-  .word illegal_insn_trap
-  .word bad_trap
-  .word misaligned_load_trap
-  .word pmp_trap
-  .word misaligned_store_trap
-  .word pmp_trap
-  .word bad_trap
-  .word mcall_trap
-  .word bad_trap
-  .word bad_trap
-  .word bad_trap
+  .quad bad_trap
+  .quad pmp_trap
+  .quad illegal_insn_trap
+  .quad bad_trap
+  .quad misaligned_load_trap
+  .quad pmp_trap
+  .quad misaligned_store_trap
+  .quad pmp_trap
+  .quad bad_trap
+  .quad mcall_trap
+  .quad bad_trap
+  .quad bad_trap
+  .quad bad_trap
 #define TRAP_FROM_MACHINE_MODE_VECTOR 13
-  .word __trap_from_machine_mode
-  .word bad_trap
-  .word bad_trap
+  .quad __trap_from_machine_mode
+  .quad bad_trap
+  .quad bad_trap
 
   .option norvc
   .section .text.init,"ax",@progbits
@@ -115,11 +115,11 @@ trap_vector:
   STORE t0, 5*REGBYTES(sp)
 1:auipc t0, %pcrel_hi(trap_table)  # t0 <- %hi(trap_table)
   STORE t1, 6*REGBYTES(sp)
-  sll t1, a1, 2                    # t1 <- mcause << 2
+  sll t1, a1, 3                    # t1 <- mcause << 3
   STORE t2, 7*REGBYTES(sp)
   add t1, t0, t1                   # t1 <- %hi(trap_table)[mcause]
   STORE s0, 8*REGBYTES(sp)
-  LWU t1, %pcrel_lo(1b)(t1)         # t1 <- trap_table[mcause]
+  LOAD t1, %pcrel_lo(1b)(t1)         # t1 <- trap_table[mcause]
   STORE s1, 9*REGBYTES(sp)
   mv a0, sp                        # a0 <- regs
   STORE a2,12*REGBYTES(sp)
