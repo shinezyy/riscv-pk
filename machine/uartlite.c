@@ -1,4 +1,6 @@
 #include "uartlite.h"
+#include <string.h>
+#include "fdt.h"
 
 volatile uint8_t* uartlite;
 
@@ -27,10 +29,47 @@ int uartlite_getchar() {
   return -1;
 }
 
-void query_uartlite(uintptr_t fdt) {
-  // Enable Rx/Tx channels
-  uartlite = (void*)0x60000000;
+struct uart_scan
+{
+  int compat;
+  uint64_t reg;
+};
 
-  // Disable interrupts, Reset Rx/Tx FIFO
+static void uart_open(const struct fdt_scan_node *node, void *extra)
+{
+  struct uart_scan *scan = (struct uart_scan *)extra;
+  memset(scan, 0, sizeof(*scan));
+}
+
+static void uart_prop(const struct fdt_scan_prop *prop, void *extra)
+{
+  struct uart_scan *scan = (struct uart_scan *)extra;
+  if (!strcmp(prop->name, "compatible") && !strcmp((const char*)prop->value, "sifive,uart0")) {
+    scan->compat = 1;
+  } else if (!strcmp(prop->name, "reg")) {
+    fdt_get_address(prop->node->parent, prop->value, &scan->reg);
+  }
+}
+
+static void uart_done(const struct fdt_scan_node *node, void *extra)
+{
+  struct uart_scan *scan = (struct uart_scan *)extra;
+  if (!scan->compat || !scan->reg || uartlite) return;
+
+  uartlite = (void*)(uintptr_t)scan->reg;
   uartlite[UART_LITE_CTRL_REG] = UART_LITE_RST_FIFO;
+}
+
+void query_uartlite(uintptr_t fdt)
+{
+  struct fdt_cb cb;
+  struct uart_scan scan;
+
+  memset(&cb, 0, sizeof(cb));
+  cb.open = uart_open;
+  cb.prop = uart_prop;
+  cb.done = uart_done;
+  cb.extra = &scan;
+
+  fdt_scan(fdt, &cb);
 }
