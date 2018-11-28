@@ -7,7 +7,7 @@
 #include "fdt.h"
 #include "mtrap.h"
 
-#define NOHYPE
+//#define NOHYPE
 
 static inline int isstring(char c)
 {
