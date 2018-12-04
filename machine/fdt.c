@@ -283,7 +283,7 @@ void query_harts(uintptr_t fdt)
   fdt_scan(fdt, &cb);
 
   // The current hart should have been detected
-  assert ((hart_mask >> read_csr(mhartid)) != 0);
+  assert ((hart_mask >> read_csr(0x810)) != 0);
 }
 
 ///////////////////////////////////////////// CLINT SCAN /////////////////////////////////////////
