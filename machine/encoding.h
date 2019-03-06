@@ -104,6 +104,7 @@
 #define MIP_SEIP            (1 << IRQ_S_EXT)
 #define MIP_HEIP            (1 << IRQ_H_EXT)
 #define MIP_MEIP            (1 << IRQ_M_EXT)
+#define MIP_DEBUG           (1 << IRQ_DEBUG)
 
 #define SIP_SSIP MIP_SSIP
 #define SIP_STIP MIP_STIP
@@ -149,6 +150,7 @@
 #define IRQ_M_EXT    11
 #define IRQ_COP      12
 #define IRQ_HOST     13
+#define IRQ_DEBUG    14
 
 #define DEFAULT_RSTVEC     0x00001000
 #define CLINT_BASE         0x02000000
